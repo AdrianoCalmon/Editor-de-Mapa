@@ -12,8 +12,8 @@ declare const htmlToImage: any;
 */
 
 const fonts = {
-  'Lato': { className: 'font-lato', style: "'Lato', sans-serif" },
   'Montserrat': { className: 'font-montserrat', style: "'Montserrat', sans-serif" },
+  'Lato': { className: 'font-lato', style: "'Lato', sans-serif" },
   'Noto Sans': { className: 'font-noto-sans', style: "'Noto Sans', sans-serif" },
   'Nunito Sans': { className: 'font-nunito-sans', style: "'Nunito Sans', sans-serif" },
   'Open Sans': { className: 'font-open-sans', style: "'Open Sans', sans-serif" },
@@ -34,7 +34,7 @@ const blankContent: MapContent = {
 
 function App() {
     const [content, setContent] = useState<MapContent>(blankContent);
-    const [selectedFont, setSelectedFont] = useState('Lato');
+    const [selectedFont, setSelectedFont] = useState('Montserrat');
     const [isDownloading, setIsDownloading] = useState(false);
     const [isSharing, setIsSharing] = useState(false);
     const [mapSource, setMapSource] = useState<'image' | 'address' | 'coordinates' | 'gps'>('image');
