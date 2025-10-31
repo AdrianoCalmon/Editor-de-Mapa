@@ -1,0 +1,7 @@
+{
+  "name": "Gerador de Mapa 2.1",
+  "description": "Um aplicativo para criar e personalizar imagens de mapas com sobreposições de texto editáveis. Importe um mapa, adicione títulos e descrições, e baixe a imagem final em alta resolução.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
