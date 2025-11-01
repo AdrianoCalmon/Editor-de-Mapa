@@ -19,4 +19,10 @@
     "typescript": "~5.8.2",
     "vite": "^6.2.0"
   }
+  {
+  // ... outras propriedades
+  "homepage": "https://<seu-usuario>.github.io/<nome-do-repositorio>",
+  // ... outras propriedades
+}
+
 }
