@@ -52,6 +52,854 @@
 </head>
 <body class="bg-slate-100">
     <div id="root"></div>
-    <script type="text/babel" data-type="module" src="./index.tsx"></script>
+    <script type="text/babel" data-type="module">
+import React, { useState, useRef, useCallback, useEffect } from 'react';
+import ReactDOM from 'react-dom/client';
+import { GoogleGenAI, Type } from "@google/genai";
+
+// Declare global variables from CDN scripts
+declare const htmlToImage: any;
+declare const L: any;
+
+// --- From types.ts ---
+interface MapContent {
+  topLeftLine1: string;
+  topLeftLine2: string;
+  topRightLine1: string;
+  topRightLine2: string;
+  bottomText: string;
+  mapImage: string | null;
+}
+
+// Common interface
+interface Font {
+  className: string;
+  style: string;
+}
+
+
+// --- From components/EditorCanvas.tsx ---
+const EditorCanvas = ({ content, canvasRef, font, mapCoordinates }) => {
+    const hasMapContent = content.mapImage || mapCoordinates;
+
+    const mapContainerRef = useRef(null);
+    const mapInstanceRef = useRef(null); // To hold the Leaflet map instance
+
+    const containerWrapperRef = useRef(null);
+    const [scale, setScale] = useState(1);
+
+    // Effect to observe the container width and calculate the scale factor
+    useEffect(() => {
+        const wrapperElement = containerWrapperRef.current;
+        if (!wrapperElement) return;
+
+        const resizeObserver = new ResizeObserver(entries => {
+            for (let entry of entries) {
+                const { width } = entry.contentRect;
+                // The desktop standard width is 576px (from sm:max-w-xl)
+                // We calculate the scale factor relative to this standard.
+                const newScale = width / 576;
+                setScale(newScale);
+            }
+        });
+
+        resizeObserver.observe(wrapperElement);
+
+        return () => {
+            if (wrapperElement) {
+                resizeObserver.unobserve(wrapperElement);
+            }
+        };
+    }, []);
+
+
+    useEffect(() => {
+        // Initialize map when coordinates are available and the container is rendered
+        if (mapCoordinates && mapContainerRef.current) {
+            // Clean up any existing map instance before creating a new one
+            if (mapInstanceRef.current) {
+                mapInstanceRef.current.remove();
+            }
+
+            const { lat, lon } = mapCoordinates;
+
+            // Create the map instance
+            const map = L.map(mapContainerRef.current, {
+                center: [lat, lon],
+                zoom: 17,
+                zoomControl: false, // Hide zoom controls for a cleaner image
+                attributionControl: false, // Hide attribution for a cleaner image
+            });
+
+            // Add the default OpenStreetMap tile layer
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            }).addTo(map);
+            
+            // Store the instance in a ref for cleanup
+            mapInstanceRef.current = map;
+
+            // A common fix for Leaflet to ensure tiles render correctly in dynamic containers
+            setTimeout(() => {
+                map.invalidateSize();
+            }, 100);
+        }
+
+        // Cleanup function: remove the map instance when the component unmounts or coordinates change
+        return () => {
+            if (mapInstanceRef.current) {
+                mapInstanceRef.current.remove();
+                mapInstanceRef.current = null;
+            }
+        };
+    }, [mapCoordinates]); // This effect re-runs whenever the mapCoordinates prop changes
+
+
+    const baseTitleSizeRem = 3;
+    const baseSubtitleSizeRem = 2.2;
+    const baseMarginTopRem = 0.5; // mt-2 = 0.5rem
+
+    const titleStyle = { fontSize: `${baseTitleSizeRem * scale}rem` };
+    const subtitleStyle = { 
+        fontSize: `${baseSubtitleSizeRem * scale}rem`,
+        marginTop: `${baseMarginTopRem * scale}rem`,
+    };
+    const bottomTextStyle = { fontSize: `${baseSubtitleSizeRem * scale}rem` };
+
+    return (
+        <div ref={containerWrapperRef} className="w-full max-w-sm sm:max-w-xl shadow-2xl rounded-lg overflow-hidden">
+            <div 
+                ref={canvasRef}
+                className={`w-full aspect-[3/4] bg-white flex flex-col ${font.className}`}
+                style={{ fontFamily: font.style }}
+            >
+                {/* Header */}
+                <header className="bg-brand-green h-[16.67%] p-[5%] flex justify-between items-center text-white relative">
+                    <div className="text-left">
+                        <h1 className="font-bold leading-none" style={titleStyle}>Mapa</h1>
+                        <p className="font-normal leading-none" style={subtitleStyle}>{content.topLeftLine2 || <>&nbsp;</>}</p>
+                    </div>
+                    <div className="text-right">
+                        <h2 className="font-bold leading-none" style={titleStyle}>{content.topRightLine1 || <>&nbsp;</>}</h2>
+                        <h2 className="font-normal leading-none" style={subtitleStyle}>{content.topRightLine2 || <>&nbsp;</>}</h2>
+                    </div>
+                </header>
+
+                {/* Map Area */}
+                <div 
+                    data-map-area="true"
+                    className="h-[66.33%] bg-gray-200 relative"
+                >
+                    {!hasMapContent && (
+                        <div className="w-full h-full flex items-center justify-center text-center text-gray-500 p-4">
+                            <div>
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mx-auto text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13v-6m0-4V3m6 17l5.447-2.724A1 1 0 0021 16.382V5.618a1 1 0 00-1.447-.894L15 7m0 13v-6m0-4V3m-6 4l6-3m-6 9l6-3" />
+                                </svg>
+                                <p className="mt-2 font-semibold">Importe ou gere um mapa</p>
+                                <p className="text-sm">A imagem ou o mapa aparecerá aqui.</p>
+                            </div>
+                        </div>
+                    )}
+
+                    {content.mapImage && (
+                        <img 
+                            src={content.mapImage} 
+                            alt="Mapa" 
+                            className="w-full h-full object-cover absolute top-0 left-0" 
+                        />
+                    )}
+
+                    {/* This div is the mount point for the Leaflet map */}
+                    {mapCoordinates && (
+                        <div ref={mapContainerRef} className="w-full h-full" />
+                    )}
+                   
+
+                    {/* Purple Marker for generated maps */}
+                    {mapCoordinates && (
+                        <div 
+                            className="absolute w-[1.675rem] h-[1.675rem] sm:w-10 sm:h-10" 
+                            style={{ 
+                                left: '50%', 
+                                top: '50%', 
+                                transform: 'translate(-50%, -100%)',
+                                filter: 'drop-shadow(0 4px 3px rgba(0,0,0,0.5))',
+                                pointerEvents: 'none', // Allows interaction with the map underneath
+                                zIndex: 1000,
+                            }}
+                        >
+                            <svg viewBox="0 0 384 512" fill="#8b5cf6" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M172.268 501.67C26.97 291.031 0 269.413 0 192 0 85.961 85.961 0 192 0s192 85.961 192 192c0 77.413-26.97 99.031-172.268 309.67a24 24 0 01-35.464 0zM192 256c35.346 0 64-28.654 64-64s-28.654-64-64-64-64 28.654-64 64 28.654 64 64 64z"/>
+                            </svg>
+                        </div>
+                    )}
+                </div>
+
+
+                {/* Footer */}
+                <footer className="bg-white h-[17%] p-[5%] flex items-start justify-start">
+                    <p className="w-full text-brand-green font-bold leading-none text-left break-words" style={bottomTextStyle}>
+                        {content.bottomText}
+                    </p>
+                </footer>
+            </div>
+        </div>
+    );
+};
+
+
+// --- From components/Controls.tsx ---
+const InputField = ({ label, value, onChange }) => (
+    <div className="flex-1 min-w-[100px]">
+        <label className="block text-xs font-bold text-gray-600 mb-1">{label}</label>
+        <input
+            type="text"
+            value={value}
+            onChange={onChange}
+            className="w-full px-2.5 py-1.5 bg-white border border-gray-200 rounded-md shadow-sm text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-brand-green focus:border-transparent transition"
+        />
+    </div>
+);
+
+const Controls = ({ 
+    content, onContentChange, onFileChange, onRemoveImage, onDownload, onShare, onReset, 
+    isDownloading, isSharing, fonts, selectedFont, onFontChange,
+    mapSource, onMapSourceChange, onGenerateMapFromAddress, isGeneratingMap,
+    hasMapContent, coordinateString, onCoordinateStringChange, onGenerateMapFromCoordinates,
+    onGenerateMapFromGps, isGettingGps
+}) => {
+    const addressIsFilled = !!(content.bottomText || content.topRightLine1 || content.topRightLine2);
+    
+    return (
+        <div className="space-y-3">
+            <header className="mb-3">
+                 <h1 className="text-xl font-black text-brand-green">Editor de Mapa</h1>
+                 <p className="text-sm text-gray-500">Personalize os textos e o mapa.</p>
+            </header>
+
+             <div className="space-y-1.5 p-2.5 bg-white rounded-lg border border-gray-200">
+                <h2 className="text-md font-bold text-gray-700">Fonte</h2>
+                <select
+                    value={selectedFont}
+                    onChange={(e) => onFontChange(e.target.value)}
+                    className="w-full px-2.5 py-1.5 bg-white border border-gray-200 rounded-md shadow-sm text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-brand-green focus:border-transparent transition"
+                >
+                    {Object.keys(fonts).map(fontName => (
+                        <option key={fontName} value={fontName}>{fontName}</option>
+                    ))}
+                </select>
+            </div>
+
+            <div className="space-y-2.5 p-2.5 bg-white rounded-lg border border-gray-200">
+                <h2 className="text-md font-bold text-gray-700">Detalhes do Mapa</h2>
+                 <div>
+                    <label className="block text-xs font-bold text-gray-600 mb-1">Número do Mapa</label>
+                    <div className="flex items-center">
+                        <span className="px-3 py-1.5 bg-gray-100 border border-r-0 border-gray-200 rounded-l-md text-gray-600 font-semibold text-sm">Nº</span>
+                        <input
+                            type="text"
+                            value={content.topLeftLine2}
+                            onChange={(e) => onContentChange('topLeftLine2', e.target.value)}
+                            className="w-full px-2.5 py-1.5 bg-white border border-gray-200 rounded-r-md shadow-sm text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-brand-green focus:border-transparent transition"
+                        />
+                    </div>
+                </div>
+                <div className="flex items-center gap-2">
+                    <InputField label="Bairro" value={content.topRightLine1} onChange={(e) => onContentChange('topRightLine1', e.target.value)} />
+                    <InputField label="Cidade" value={content.topRightLine2} onChange={(e) => onContentChange('topRightLine2', e.target.value)} />
+                </div>
+                <InputField label="Endereço" value={content.bottomText} onChange={(e) => onContentChange('bottomText', e.target.value)} />
+            </div>
+
+            <div className="space-y-1.5 p-2.5 bg-white rounded-lg border border-gray-200">
+                <h2 className="text-md font-bold text-gray-700">Origem do Mapa</h2>
+                <div className="flex flex-wrap gap-x-4 gap-y-1.5 pt-1">
+                    <label className="flex items-center space-x-2 cursor-pointer">
+                        <input
+                            type="radio"
+                            name="mapSource"
+                            value="image"
+                            checked={mapSource === 'image'}
+                            onChange={() => onMapSourceChange('image')}
+                            className="h-4 w-4 text-brand-green focus:ring-brand-green border-gray-300"
+                        />
+                        <span className="text-sm">Imagem</span>
+                    </label>
+                    <label className="flex items-center space-x-2 cursor-pointer">
+                        <input
+                            type="radio"
+                            name="mapSource"
+                            value="address"
+                            checked={mapSource === 'address'}
+                            onChange={() => onMapSourceChange('address')}
+                            className="h-4 w-4 text-brand-green focus:ring-brand-green border-gray-300"
+                        />
+                        <span className="text-sm">Endereço</span>
+                    </label>
+                     <label className="flex items-center space-x-2 cursor-pointer">
+                        <input
+                            type="radio"
+                            name="mapSource"
+                            value="coordinates"
+                            checked={mapSource === 'coordinates'}
+                            onChange={() => onMapSourceChange('coordinates')}
+                            className="h-4 w-4 text-brand-green focus:ring-brand-green border-gray-300"
+                        />
+                        <span className="text-sm">Coordenadas</span>
+                    </label>
+                    <label className="flex items-center space-x-2 cursor-pointer">
+                        <input
+                            type="radio"
+                            name="mapSource"
+                            value="gps"
+                            checked={mapSource === 'gps'}
+                            onChange={() => onMapSourceChange('gps')}
+                            className="h-4 w-4 text-brand-green focus:ring-brand-green border-gray-300"
+                        />
+                        <span className="text-sm">GPS</span>
+                    </label>
+                </div>
+            </div>
+
+            {mapSource === 'image' && (
+                <div className="p-2.5 bg-white rounded-lg border border-gray-200">
+                    <label className="block w-full cursor-pointer bg-slate-50 border border-gray-300 rounded-md shadow-sm text-center p-2.5 hover:bg-gray-100 transition">
+                        <span className="text-brand-green font-semibold text-sm">Escolher arquivo</span>
+                        <input type="file" accept="image/*" onChange={onFileChange} className="hidden" />
+                    </label>
+                    {content.mapImage && (
+                        <button
+                            onClick={onRemoveImage}
+                            className="w-full bg-red-500 text-white font-bold py-1.5 px-4 rounded-lg shadow-md hover:bg-red-600 transition-all duration-300 text-sm mt-2"
+                        >
+                            Apagar Imagem
+                        </button>
+                    )}
+                </div>
+            )}
+
+            {mapSource === 'address' && (
+                <div className="space-y-2 p-2.5 bg-white rounded-lg border border-gray-200">
+                    <h2 className="text-md font-bold text-gray-700">Gerar por Endereço</h2>
+                    <p className="text-xs text-gray-500">
+                        Use os campos de detalhes do mapa para gerar.
+                    </p>
+                    <button
+                        onClick={onGenerateMapFromAddress}
+                        disabled={isGeneratingMap || !addressIsFilled}
+                        className="w-full bg-blue-600 text-white font-bold py-2 px-4 rounded-lg shadow-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-all duration-300 flex items-center justify-center mt-1 text-sm"
+                    >
+                        {isGeneratingMap ? (
+                            <>
+                                <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                Gerando...
+                            </>
+                        ) : (
+                        'Gerar Mapa'
+                        )}
+                    </button>
+                    {!addressIsFilled && <p className="text-xs text-center text-red-500 mt-1">Preencha o endereço para gerar.</p>}
+                </div>
+            )}
+
+            {mapSource === 'coordinates' && (
+                <div className="space-y-1.5 p-2.5 bg-white rounded-lg border border-gray-200">
+                    <h2 className="text-md font-bold text-gray-700">Gerar por Coordenadas</h2>
+                    <p className="text-xs text-gray-500">
+                        Use o formato: latitude, longitude.
+                    </p>
+                    <input
+                        type="text"
+                        value={coordinateString}
+                        onChange={(e) => onCoordinateStringChange(e.target.value)}
+                        placeholder="-8.05428, -34.8813"
+                        className="w-full px-2.5 py-1.5 bg-white border border-gray-200 rounded-md shadow-sm text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-brand-green focus:border-transparent transition"
+                    />
+                    <button
+                        onClick={onGenerateMapFromCoordinates}
+                        disabled={!coordinateString.trim()}
+                        className="w-full bg-blue-600 text-white font-bold py-2 px-4 rounded-lg shadow-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-all duration-300 flex items-center justify-center mt-1.5 text-sm"
+                    >
+                        Gerar Mapa
+                    </button>
+                </div>
+            )}
+            
+            {mapSource === 'gps' && (
+                <div className="space-y-2 p-2.5 bg-white rounded-lg border border-gray-200">
+                    <h2 className="text-md font-bold text-gray-700">Gerar por GPS</h2>
+                    <p className="text-xs text-gray-500">
+                        Use a localização atual do seu dispositivo.
+                    </p>
+                    <button
+                        onClick={onGenerateMapFromGps}
+                        disabled={isGettingGps}
+                        className="w-full bg-blue-600 text-white font-bold py-2 px-4 rounded-lg shadow-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-all duration-300 flex items-center justify-center mt-1 text-sm"
+                    >
+                        {isGettingGps ? (
+                            <>
+                                <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                Obtendo Localização...
+                            </>
+                        ) : (
+                        'Gerar Mapa'
+                        )}
+                    </button>
+                </div>
+            )}
+
+
+            <div className="pt-2 space-y-2">
+                 <button
+                    onClick={onDownload}
+                    disabled={isDownloading || !hasMapContent}
+                    className="w-full bg-brand-green text-white font-bold py-2 px-4 rounded-lg shadow-md hover:bg-teal-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-all duration-300 flex items-center justify-center text-sm"
+                >
+                    {isDownloading ? (
+                         <>
+                            <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            Baixando...
+                         </>
+                    ) : (
+                       'Baixar Imagem'
+                    )}
+                </button>
+                {navigator.share && (
+                    <button
+                        onClick={onShare}
+                        disabled={isSharing || !hasMapContent}
+                        className="w-full bg-blue-500 text-white font-bold py-2 px-4 rounded-lg shadow-md hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed transition-all duration-300 flex items-center justify-center text-sm"
+                    >
+                        {isSharing ? (
+                            <>
+                                <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                Compartilhando...
+                            </>
+                        ) : (
+                           'Compartilhar Imagem'
+                        )}
+                    </button>
+                )}
+                 <button
+                    onClick={onReset}
+                    className="w-full bg-gray-500 text-white font-bold py-2 px-4 rounded-lg shadow-md hover:bg-gray-600 transition-all duration-300 text-sm"
+                >
+                    Resetar
+                </button>
+                 {!hasMapContent && <p className="text-xs text-center text-red-500 mt-1">Importe ou gere um mapa para continuar.</p>}
+            </div>
+        </div>
+    );
+};
+
+
+// --- From App.tsx ---
+/*
+  Adriano Calmon da Silva Queiroz - 2025
+*/
+
+const fonts = {
+  'Montserrat': { className: 'font-montserrat', style: "'Montserrat', sans-serif" },
+  'Lato': { className: 'font-lato', style: "'Lato', sans-serif" },
+  'Noto Sans': { className: 'font-noto-sans', style: "'Noto Sans', sans-serif" },
+  'Nunito Sans': { className: 'font-nunito-sans', style: "'Nunito Sans', sans-serif" },
+  'Open Sans': { className: 'font-open-sans', style: "'Open Sans', sans-serif" },
+  'Poppins': { className: 'font-poppins', style: "'Poppins', sans-serif" },
+  'Roboto': { className: 'font-roboto', style: "'Roboto', sans-serif" },
+  'Source Sans Pro': { className: 'font-source-sans-pro', style: "'Source Sans Pro', sans-serif" },
+};
+
+const blankContent = {
+    topLeftLine1: 'Mapa',
+    topLeftLine2: '',
+    topRightLine1: '',
+    topRightLine2: '',
+    bottomText: '',
+    mapImage: null,
+};
+
+
+function App() {
+    const [content, setContent] = useState(blankContent);
+    const [selectedFont, setSelectedFont] = useState('Montserrat');
+    const [isDownloading, setIsDownloading] = useState(false);
+    const [isSharing, setIsSharing] = useState(false);
+    const [mapSource, setMapSource] = useState('image');
+    const [isGeneratingMap, setIsGeneratingMap] = useState(false);
+    const [isGettingGps, setIsGettingGps] = useState(false);
+    const [mapCoordinates, setMapCoordinates] = useState(null);
+    const [coordinateString, setCoordinateString] = useState('');
+    const canvasRef = useRef(null);
+
+    useEffect(() => {
+        const fontUrl = 'https://fonts.googleapis.com/css2?family=Lato:wght@400;700;900&family=Montserrat:wght@400;700;900&family=Noto+Sans:wght@400;700&family=Nunito+Sans:wght@400;700;900&family=Open+Sans:wght@400;700&family=Poppins:wght@400;700;900&family=Roboto:wght@400;700;900&family=Source+Sans+Pro:wght@400;700&display=swap';
+    
+        const embedFonts = async () => {
+            try {
+                const cssResponse = await fetch(fontUrl);
+                if (!cssResponse.ok) throw new Error('Falha ao buscar o CSS da fonte.');
+                let cssText = await cssResponse.text();
+    
+                const fontUrls = cssText.match(/url\(https?:\/\/[^)]+\)/g) || [];
+    
+                const fontPromises = fontUrls.map(async (urlMatch) => {
+                    const fontFileUrl = urlMatch.replace(/url\((['"]?)(.*?)\1\)/, '$2');
+                    try {
+                        const fontResponse = await fetch(fontFileUrl);
+                        if (!fontResponse.ok) return { originalUrl: urlMatch, dataUrl: null };
+                        const blob = await fontResponse.blob();
+                        return new Promise((resolve, reject) => {
+                            const reader = new FileReader();
+                            reader.onloadend = () => {
+                                resolve({ originalUrl: urlMatch, dataUrl: `url(${reader.result})` });
+                            };
+                            reader.onerror = reject;
+                            reader.readAsDataURL(blob);
+                        });
+                    } catch (error) {
+                        console.error(`Falha ao buscar/embutir fonte: ${fontFileUrl}`, error);
+                        return { originalUrl: urlMatch, dataUrl: null };
+                    }
+                });
+    
+                const embeddedFonts = await Promise.all(fontPromises);
+    
+                for (const { originalUrl, dataUrl } of embeddedFonts) {
+                    if (dataUrl) {
+                        cssText = cssText.replace(originalUrl, dataUrl);
+                    }
+                }
+    
+                const styleElement = document.createElement('style');
+                styleElement.textContent = cssText;
+                document.head.appendChild(styleElement);
+    
+            } catch (error) {
+                console.error('Erro ao embutir fontes:', error);
+                // Como fallback, adiciona a tag de link original para que as fontes funcionem na tela.
+                const link = document.createElement('link');
+                link.rel = 'stylesheet';
+                link.href = fontUrl;
+                document.head.appendChild(link);
+            }
+        };
+    
+        embedFonts();
+    }, []); // Executa apenas uma vez na montagem do componente
+
+    const handleContentChange = useCallback((key, value) => {
+        setContent(prev => ({ ...prev, [key]: value }));
+    }, []);
+    
+    const handleFontChange = useCallback((fontName) => {
+        if (fonts[fontName]) {
+            setSelectedFont(fontName);
+        }
+    }, []);
+
+    const handleMapSourceChange = useCallback((source) => {
+        setMapSource(source);
+    }, []);
+
+    const handleFileChange = useCallback((event) => {
+        if (event.target.files && event.target.files[0]) {
+            const file = event.target.files[0];
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                setContent(prev => ({ ...prev, mapImage: reader.result }));
+                setMapCoordinates(null);
+                setMapSource('image');
+            };
+            reader.readAsDataURL(file);
+        }
+    }, []);
+
+    const handleRemoveImage = useCallback(() => {
+        setContent(prev => ({ ...prev, mapImage: null }));
+        setMapCoordinates(null);
+        const fileInput = document.querySelector('input[type="file"]');
+        if (fileInput) fileInput.value = "";
+    }, []);
+
+    const handleReset = useCallback(() => {
+        setContent(blankContent);
+        setMapCoordinates(null);
+        setMapSource('image');
+        setCoordinateString('');
+        const fileInput = document.querySelector('input[type="file"]');
+        if (fileInput) fileInput.value = "";
+    }, []);
+
+    const handleGenerateMapFromAddress = useCallback(async () => {
+        const { bottomText, topRightLine1, topRightLine2 } = content;
+        const address = [bottomText, topRightLine1, topRightLine2]
+            .filter(Boolean)
+            .join(', ');
+    
+        if (!address) {
+            alert('Por favor, preencha os campos de endereço, bairro e cidade para gerar o mapa.');
+            return;
+        }
+    
+        setIsGeneratingMap(true);
+        
+        try {
+            const apiKey = process.env.API_KEY;
+            if (!apiKey) throw new Error('A chave da API do Gemini não está configurada.');
+
+            const prompt = `Encontre as coordenadas geográficas (latitude e longitude) para o local a seguir. A informação principal para a busca é o 'Endereço'. Use 'Bairro' e 'Cidade' como informações de apoio para garantir a precisão. Dê prioridade máxima ao 'Endereço'. Endereço: "${bottomText}", Bairro: "${topRightLine1}", Cidade: "${topRightLine2}". Responda apenas com um objeto JSON com as chaves "latitude" e "longitude".`;
+    
+            const ai = new GoogleGenAI({ apiKey });
+            const geoResponse = await ai.models.generateContent({
+                model: "gemini-2.5-flash",
+                contents: prompt,
+                config: {
+                    responseMimeType: "application/json",
+                    responseSchema: {
+                        type: Type.OBJECT,
+                        properties: {
+                            latitude: { type: Type.NUMBER },
+                            longitude: { type: Type.NUMBER },
+                        },
+                        required: ["latitude", "longitude"],
+                    },
+                },
+            });
+            
+            const resultJson = JSON.parse(geoResponse.text);
+            const latitude = parseFloat(resultJson.latitude);
+            const longitude = parseFloat(resultJson.longitude);
+
+            if (isNaN(latitude) || isNaN(longitude)) {
+                throw new Error("Não foi possível obter coordenadas válidas para o endereço fornecido.");
+            }
+            
+            setContent(prev => ({ ...prev, mapImage: null }));
+            setMapCoordinates({ lat: latitude, lon: longitude });
+
+        } catch (error) {
+            console.error('Erro ao gerar coordenadas:', error);
+            alert(`Erro ao obter localização: ${error instanceof Error ? error.message : 'Erro desconhecido'}`);
+        } finally {
+            setIsGeneratingMap(false);
+        }
+    }, [content]);
+
+    const handleGenerateMapFromCoordinates = useCallback(() => {
+        if (!coordinateString) {
+            alert('Por favor, insira as coordenadas.');
+            return;
+        }
+    
+        const parts = coordinateString.split(',').map(part => part.trim());
+        if (parts.length !== 2) {
+            alert('Formato de coordenadas inválido. Use o formato "latitude, longitude".');
+            return;
+        }
+    
+        const lat = parseFloat(parts[0]);
+        const lon = parseFloat(parts[1]);
+    
+        if (isNaN(lat) || isNaN(lon)) {
+            alert('Coordenadas inválidas. Latitude e longitude devem ser números.');
+            return;
+        }
+    
+        setContent(prev => ({ ...prev, mapImage: null }));
+        setMapCoordinates({ lat, lon });
+    }, [coordinateString]);
+
+    const handleGenerateMapFromGps = useCallback(() => {
+        if (!navigator.geolocation) {
+            alert('A geolocalização não é suportada por este navegador.');
+            return;
+        }
+
+        setIsGettingGps(true);
+
+        navigator.geolocation.getCurrentPosition(
+            (position) => {
+                const { latitude, longitude } = position.coords;
+                setContent(prev => ({ ...prev, mapImage: null }));
+                setMapCoordinates({ lat: latitude, lon: longitude });
+                setIsGettingGps(false);
+            },
+            (error) => {
+                console.error("Erro ao obter localização GPS:", error);
+                let errorMessage = "Ocorreu um erro desconhecido ao obter a localização.";
+                switch(error.code) {
+                    case error.PERMISSION_DENIED:
+                        errorMessage = "Você negou a permissão para a localização.";
+                        break;
+                    case error.POSITION_UNAVAILABLE:
+                        errorMessage = "A informação de localização não está disponível.";
+                        break;
+                    case error.TIMEOUT:
+                        errorMessage = "A requisição para obter a localização expirou.";
+                        break;
+                }
+                alert(errorMessage);
+                setIsGettingGps(false);
+            }
+        );
+    }, []);
+
+    const captureCanvasAsPng = useCallback(async () => {
+        const node = canvasRef.current;
+        if (!node) throw new Error('A área de visualização não está pronta.');
+    
+        try {
+            const targetWidth = 1200;
+            // Get the actual on-screen width of the element to calculate the required scale factor.
+            const sourceWidth = node.offsetWidth;
+            
+            // The pixelRatio is the multiplier to scale the source width up to the target width.
+            const pixelRatio = targetWidth / sourceWidth;
+    
+            const options = {
+                // By specifying a pixelRatio, we are telling the library to create an image
+                // that is 'pixelRatio' times larger than the on-screen element.
+                // This effectively creates a high-resolution "screenshot" of the current view,
+                // preserving the exact composition seen in the editor.
+                pixelRatio,
+                cacheBust: true,
+                allowTaint: true,
+                useCORS: true,
+            };
+    
+            return await htmlToImage.toPng(node, options);
+        } catch (error) {
+            console.error("Oops, algo deu errado!", error);
+            throw new Error("Falha ao preparar a imagem para captura. Verifique se a imagem do mapa pode ser acessada corretamente.");
+        }
+    }, []);
+
+
+    const handleDownload = useCallback(async () => {
+        if (!content.mapImage && !mapCoordinates) {
+            alert('Por favor, importe ou gere uma imagem de mapa primeiro.');
+            return;
+        }
+        setIsDownloading(true);
+        try {
+            const dataUrl = await captureCanvasAsPng();
+            const mapNumber = content.topLeftLine2?.trim();
+            const filename = mapNumber ? `mapa_${mapNumber.replace(/[^a-z0-9]/gi, '_')}.png` : 'mapa_personalizado.png';
+            const link = document.createElement('a');
+            link.download = filename;
+            link.href = dataUrl;
+            link.click();
+        } catch (error) {
+            console.error('Oops, algo deu errado!', error);
+            alert(`Falha ao gerar a imagem: ${error instanceof Error ? error.message : 'Erro desconhecido'}`);
+        } finally {
+            setIsDownloading(false);
+        }
+    }, [content.topLeftLine2, mapCoordinates, content.mapImage, captureCanvasAsPng]);
+
+    const handleShare = useCallback(async () => {
+        if (!content.mapImage && !mapCoordinates) {
+            alert('Por favor, importe ou gere uma imagem de mapa primeiro.');
+            return;
+        }
+        if (!navigator.share) {
+            alert('O seu navegador não suporta a função de compartilhamento.');
+            return;
+        }
+
+        setIsSharing(true);
+        try {
+            const dataUrl = await captureCanvasAsPng();
+            const response = await fetch(dataUrl);
+            const blob = await response.blob();
+            const mapNumber = content.topLeftLine2?.trim();
+            const filename = mapNumber ? `mapa_${mapNumber.replace(/[^a-z0-9]/gi, '_')}.png` : 'mapa_personalizado.png';
+            const file = new File([blob], filename, { type: blob.type });
+
+            if (navigator.canShare && navigator.canShare({ files: [file] })) {
+                await navigator.share({
+                    files: [file],
+                    title: `Mapa Personalizado - ${mapNumber || ''}`,
+                    text: 'Veja o mapa que eu criei com o Gerador de Mapa!',
+                });
+            } else {
+                alert('Não é possível compartilhar esta imagem neste dispositivo.');
+            }
+        } catch (error) {
+            if (error.name !== 'AbortError') {
+                 console.error('Erro ao compartilhar:', error);
+                 alert(`Falha ao compartilhar a imagem: ${error.message}`);
+            }
+        } finally {
+            setIsSharing(false);
+        }
+    }, [content.topLeftLine2, mapCoordinates, content.mapImage, captureCanvasAsPng]);
+
+    return (
+        <div className="font-roboto min-h-screen flex flex-col md:flex-row text-gray-800">
+            <aside className="w-full md:w-1/3 lg:w-1/4 xl:w-1/5 bg-white p-4 md:p-6 shadow-lg md:h-screen md:overflow-y-auto">
+                <Controls 
+                    content={content}
+                    onContentChange={handleContentChange}
+                    onFileChange={handleFileChange}
+                    onRemoveImage={handleRemoveImage}
+                    onDownload={handleDownload}
+                    onShare={handleShare}
+                    onReset={handleReset}
+                    isDownloading={isDownloading}
+                    isSharing={isSharing}
+                    fonts={fonts}
+                    selectedFont={selectedFont}
+                    onFontChange={handleFontChange}
+                    mapSource={mapSource}
+                    onMapSourceChange={handleMapSourceChange}
+                    onGenerateMapFromAddress={handleGenerateMapFromAddress}
+                    isGeneratingMap={isGeneratingMap}
+                    hasMapContent={!!content.mapImage || !!mapCoordinates}
+                    coordinateString={coordinateString}
+                    onCoordinateStringChange={setCoordinateString}
+                    onGenerateMapFromCoordinates={handleGenerateMapFromCoordinates}
+                    onGenerateMapFromGps={handleGenerateMapFromGps}
+                    isGettingGps={isGettingGps}
+                />
+            </aside>
+            <main className="flex-1 p-4 md:p-8 flex items-center justify-center bg-slate-100">
+                 <EditorCanvas 
+                    content={content}
+                    canvasRef={canvasRef}
+                    font={fonts[selectedFont]}
+                    mapCoordinates={mapCoordinates}
+                />
+            </main>
+        </div>
+    );
+}
+
+// --- From index.tsx ---
+const rootElement = document.getElementById('root');
+if (!rootElement) {
+  throw new Error("Could not find root element to mount to");
+}
+
+const root = ReactDOM.createRoot(rootElement);
+root.render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
+);
+</script>
 </body>
 </html>
