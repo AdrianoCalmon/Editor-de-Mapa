@@ -228,6 +228,11 @@ function App() {
             return;
         }
 
+        if (!window.isSecureContext) {
+            alert('A geolocalização está disponível apenas em conexões seguras (HTTPS).');
+            return;
+        }
+
         setIsGettingGps(true);
 
         navigator.geolocation.getCurrentPosition(
@@ -238,14 +243,14 @@ function App() {
                 setIsGettingGps(false);
             },
             (error) => {
-                console.error("Erro ao obter localização GPS:", error);
+                console.error(`Erro ao obter localização GPS (código ${error.code}): ${error.message}`);
                 let errorMessage = "Ocorreu um erro desconhecido ao obter a localização.";
                 switch(error.code) {
                     case error.PERMISSION_DENIED:
                         errorMessage = "Você negou a permissão para a localização.";
                         break;
                     case error.POSITION_UNAVAILABLE:
-                        errorMessage = "A informação de localização não está disponível.";
+                        errorMessage = "A informação de localização não está disponível. Verifique as configurações do seu dispositivo.";
                         break;
                     case error.TIMEOUT:
                         errorMessage = "A requisição para obter a localização expirou.";
