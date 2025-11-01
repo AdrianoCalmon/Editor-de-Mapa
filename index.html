@@ -13,6 +13,10 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
     
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html-to-image/1.11.11/html-to-image.min.js"></script>
+    
+    <!-- Babel for in-browser JSX/TSX transpilation -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
     <script>
       tailwind.config = {
         theme: {
@@ -48,6 +52,6 @@
 </head>
 <body class="bg-slate-100">
     <div id="root"></div>
-    <script type="module" src="index.tsx"></script>
+    <script type="text/babel" data-type="module" src="./index.tsx"></script>
 </body>
 </html>
