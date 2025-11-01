@@ -1,5 +1,5 @@
 import React from 'react';
-import type { MapContent } from '../types';
+import type { MapContent } from '../types.ts';
 
 interface Font {
   className: string;

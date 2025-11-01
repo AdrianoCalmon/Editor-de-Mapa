@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import type { MapContent } from '../types';
+import type { MapContent } from '../types.ts';
 
 // Declare the Leaflet global 'L' for TypeScript since it's loaded from a CDN
 declare const L: any;

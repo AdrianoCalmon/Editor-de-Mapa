@@ -1,8 +1,8 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { GoogleGenAI, Type } from "@google/genai";
-import Controls from './components/Controls';
-import EditorCanvas from './components/EditorCanvas';
-import type { MapContent } from './types';
+import Controls from './components/Controls.tsx';
+import EditorCanvas from './components/EditorCanvas.tsx';
+import type { MapContent } from './types.ts';
 
 // This is needed for TypeScript to recognize the global variable from the CDN script
 declare const htmlToImage: any;
