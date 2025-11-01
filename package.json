@@ -19,5 +19,5 @@
     "typescript": "~5.8.2",
     "vite": "^6.2.0"
   }, 
-  "homepage": "https://<seu-usuario>.github.io/<nome-do-repositorio>",
+  "homepage": "https://adrianocalmon.github.io/editor-de-mapa",
 }
