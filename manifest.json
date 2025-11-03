@@ -1,0 +1,17 @@
+{
+  "name": "Gerador de Mapa 2.1",
+  "short_name": "Mapa Gen",
+  "description": "Um aplicativo para criar e personalizar imagens de mapas com sobreposições de texto editáveis. Importe um mapa, adicione títulos e descrições, e baixe a imagem final em alta resolução.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F3EFE9",
+  "theme_color": "#659B8E",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}
